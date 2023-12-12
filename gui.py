@@ -614,7 +614,6 @@ class Ui_MainWindow(object):
 
         self.transmission = pg.GraphicsLayoutWidget()
         self.transmission.setBackground("w")
-        self.transmission.setFixedWidth(MainWindow.width() * 1.8)
         self.plot1 = intensityPlot.IntensityPlot()
         self.transmission.addItem(self.plot1)
         self.plots_layout.addWidget(self.transmission)

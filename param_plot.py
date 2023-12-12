@@ -18,3 +18,6 @@ class ParameterPlot(pg.PlotItem):
         x = list(range(len(list(self.y))))
         param_data = pg.PlotDataItem(x, list(self.y), pen=(2, 80, 158))
         self.addItem(param_data)
+
+    def change_size(self, new_size):
+        self.y = deque(self.y, maxlen=new_size)

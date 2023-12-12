@@ -8,11 +8,15 @@ class IntensityPlot(pg.PlotItem):
         super().__init__(parent, name, labels, title, viewBox, axisItems, enableMenu)
         self.addLegend()
         self.showGrid(x=True, y=True, alpha=1)
-        self.intensity_plot = self.plot()
+        self.plot()
         self.getAxis("left").setTextPen("black")
         self.getAxis("bottom").setTextPen("black")
+        self.transmission_data1 = None
 
     def update(self, x, y):
         self.clear()
-        intensity_data = pg.PlotDataItem(x, y, pen=(2, 80, 158))
-        self.addItem(intensity_data)
+        color1 = (158, 2, 2)
+        self.transmission_data1 = pg.PlotDataItem(x, y, pen=color1)
+        self.addItem(self.transmission_data1)
+
+

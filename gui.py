@@ -368,6 +368,8 @@ class Ui_MainWindow(object):
     def error_out(self, res):
         with open('./config.json', 'r', encoding="utf-8") as file:
             json_data = json.load(file)
+        if res > 0:
+            res = -500
         self.fspec_error.setText("Ошибка! " + str(json_data["errors"].get(str(res))))
         self.icon_label.show()
         self.stop_thread()

@@ -11,10 +11,10 @@ class ParameterPlot(pg.PlotItem):
         self.plot()
         self.y = deque(maxlen=self.stack_size)
 
-    def update(self, conc):
+    def update(self, conc, start):
         self.clear()
         self.y.append(conc)
-        x = list(range(len(list(self.y))))
+        x = list(range(start, start * (len(list(self.y)) + 1), start))
         param_data = pg.PlotDataItem(x, list(self.y), pen=(2, 80, 158))
         self.addItem(param_data)
 

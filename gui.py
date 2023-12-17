@@ -357,6 +357,11 @@ class ModalPopup(QDialog):
         save_button.clicked.connect(self.save)
         layout.addWidget(save_button)
 
+        if not stop_threads:
+            button1.setEnabled(False)
+            self.rb_on.setEnabled(False)
+            self.rb_off.setEnabled(False)
+
 
 class ModbusWindow(QDialog):
     def start_client(self, device, PORT, baudrate, timeout):
@@ -473,7 +478,6 @@ class Ui_MainWindow(object):
         self.thread.start()
         self.start_button.setText("Стоп")
         self.start_button.clicked.connect(self.stop_thread)
-        self.settings_button.setEnabled(False)
         self.fon_update.setEnabled(False)
 
     def run_fix_fon_thread(self):
@@ -485,8 +489,9 @@ class Ui_MainWindow(object):
         stop_threads = True
         self.start_button.setText("Старт")
         self.start_button.clicked.connect(self.run_thread)
-        self.settings_button.setEnabled(True)
         self.fon_update.setEnabled(True)
+        if os.path.exists("./Spectra/fon.spe"):
+            os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
 
     def generate_warnings(self, warning):
         self.warnings_box.clear()
@@ -616,7 +621,6 @@ class Ui_MainWindow(object):
     def set_fixed_fon(self):
         global first_start
         self.start_button.setEnabled(False)
-        self.settings_button.setEnabled(False)
         if first_start:
             res, warn = start_func()
             if res == 0:
@@ -653,7 +657,6 @@ class Ui_MainWindow(object):
             else:
                 self.error_out(res)
         self.start_button.setEnabled(True)
-        self.settings_button.setEnabled(True)
 
     def param_plots(self, conc, build):
         global parameter
@@ -684,14 +687,14 @@ class Ui_MainWindow(object):
                 parameter.append(plot)
                 widget.addItem(plot)
                 widget.setBackground("w")
-                plot.update(conc[i])
+                plot.update(conc[i], plots_interval)
                 plot.y.pop()
                 layout.addLayout(param_layout, i, 0)
                 layout.addWidget(widget, i, 1)
         else:
             for i in range(len(conc)):
                 self.param_values[i].setText("{:.2f}".format(conc[i]))
-                parameter[i].update(conc[i])
+                parameter[i].update(conc[i], plots_interval)
 
     def open_settings(self):
         self.modal_popup = ModalPopup(self)
@@ -718,7 +721,7 @@ class Ui_MainWindow(object):
         self.settings.setObjectName("settings")
 
         button_font = QtGui.QFont()
-        button_font.setPointSize(10)
+        button_font.setPointSize(9)
         button_font.setBold(False)
 
         start_layout = QGridLayout()
@@ -727,6 +730,8 @@ class Ui_MainWindow(object):
         self.start_button.setFont(button_font)
         self.start_button.setObjectName("start_button")
         self.start_button.clicked.connect(self.run_thread)
+        if not os.path.exists("./Spectra/original.spe") and not os.path.exists("./Spectra/fon.spe"):
+            self.start_button.setEnabled(False)
         start_layout.addWidget(self.start_button, 0, 0)
 
         group_box = QtWidgets.QGroupBox("Окно предупреждений")
@@ -765,7 +770,7 @@ class Ui_MainWindow(object):
 
         self.fon_update = QtWidgets.QPushButton()
         self.fon_update.setFixedSize(160, 100)
-        self.fon_update.setText("Фиксировать\nспектр")
+        self.fon_update.setText("Взять спектр\nпустой кюветы")
         self.fon_update.setFont(button_font)
         self.fon_update.clicked.connect(self.run_fix_fon_thread)
         start_layout.addWidget(self.fon_update, 0, 3)

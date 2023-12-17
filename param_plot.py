@@ -6,7 +6,6 @@ class ParameterPlot(pg.PlotItem):
     def __init__(self, parent=None, name=None, labels=None, title=None,
                  viewBox=None, axisItems=None, enableMenu=True, stack_size=0):
         super().__init__(parent, name, labels, title, viewBox, axisItems, enableMenu)
-        self.hideAxis(axis='bottom')
         self.stack_size = stack_size
 
         self.plot()

@@ -3,7 +3,7 @@ import pyqtgraph as pg
 
 class TransmissionPlot(pg.PlotItem):
 
-    def __init__(self, parent=None, name=None, labels=None, title='Спектр пропускания',
+    def __init__(self, parent=None, name=None, labels=None, title='Спектр поглощения',
                  viewBox=None, axisItems=None, enableMenu=True):
         super().__init__(parent, name, labels, title, viewBox, axisItems, enableMenu)
         self.addLegend()

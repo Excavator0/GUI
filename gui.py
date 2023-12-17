@@ -1,8 +1,16 @@
 import configparser
+import csv
+import glob
+import serial.tools.list_ports
 import os
 import subprocess
 import threading
 import time
+import serial
+import modbus_tk
+import modbus_tk.defines as cst
+from modbus_tk import modbus_rtu
+from datetime import datetime
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QVBoxLayout, QGridLayout, QHBoxLayout, QDialog, QFileDialog
@@ -16,16 +24,31 @@ import transmissionPlot
 import intensityPlot
 import param_plot
 
-
 first_start = True
 int_max = 100000
 simulation = 1
 method_path = "test-2.mtg"
 fspec_path = "Не выбран"
-trans_interval = 60
-int_interval = 10
+plots_interval = 10
+params_interval = 60
 stop_threads = True
 parameter = []
+days_threshold = 0
+modbus_connected = False
+device_num = 0
+zoom = True
+
+master = None
+logger = modbus_tk.utils.create_logger("console")
+
+
+def send_conc(device, conc):
+    logger.info(master.execute(device, cst.WRITE_MULTIPLE_COILS, 0, output_value=conc))
+
+
+def send_res(device, res, warn):
+    logger.info(master.execute(device, cst.WRITE_MULTIPLE_COILS, 100, output_value=[res, warn]))
+
 
 # GAS.dll functions below
 dll_path = "./GAS.dll"
@@ -134,7 +157,7 @@ class ModalPopup(QDialog):
         self.path2_label.setText(fspec_path)
 
     def save(self):
-        global simulation, trans_interval, int_interval
+        global simulation, plots_interval, params_interval, days_threshold
         self.close()
 
         if self.rb_off.isChecked():
@@ -147,53 +170,56 @@ class ModalPopup(QDialog):
         with open('./Device.ini', 'w') as configfile:
             config.write(configfile)
 
-        int_interval = int(self.combo1.currentText()[0:2])
+        plots_interval = int(self.combo1.currentText()[0:2])
         s = self.combo2.currentText()
         if s == "1 мин":
-            trans_interval = 60
+            params_interval = 60
         elif s == "1 час":
-            trans_interval = 3600
+            params_interval = 3600
         elif s == "24 часа":
-            trans_interval = 3600 * 24
+            params_interval = 3600 * 24
         elif s == "Неделя":
-            trans_interval = 3600 * 24 * 7
+            params_interval = 3600 * 24 * 7
         elif s == "2 недели":
-            trans_interval = 3600 * 24 * 14
+            params_interval = 3600 * 24 * 14
         else:
-            trans_interval = 3600 * 24 * 30
-        stack_size = "5"
-        if self.entry1.text() != '':
-            change_param_size(int(self.entry1.text()))
-            stack_size = self.entry1.text()
+            params_interval = 3600 * 24 * 30
         max_val = "8000"
         min_val = "0"
         if self.max_entry.text() != '':
             if self.min_entry.text() != '':
+                self.parent.plot2.setXRange(int(self.min_entry.text()), int(self.max_entry.text()))
                 self.parent.plot1.setXRange(int(self.min_entry.text()), int(self.max_entry.text()))
                 max_val = self.max_entry.text()
                 min_val = self.min_entry.text()
             else:
+                self.parent.plot2.setXRange(0, int(self.max_entry.text()))
                 self.parent.plot1.setXRange(0, int(self.max_entry.text()))
                 max_val = self.max_entry.text()
         elif self.min_entry.text() != '':
+            self.parent.plot2.setXRange(int(self.min_entry.text()), 8000)
             self.parent.plot1.setXRange(int(self.min_entry.text()), 8000)
             min_val = self.min_entry.text()
-
+        if self.save_entry != '':
+            days_threshold = int(self.save_entry.text())
+        else:
+            days_threshold = 5
         with open('./config.json', 'r', encoding="utf-8") as file:
             json_data = json.load(file)
         json_data["simulation"] = str(simulation)
         json_data["method_path"] = method_path
         json_data["fspec_path"] = fspec_path
-        json_data["int_period"] = self.combo1.currentText()
-        json_data["trans_period"] = self.combo2.currentText()
-        json_data["param_size"] = stack_size
+        json_data["params_period"] = self.combo2.currentText()
+        json_data["plots_period"] = self.combo1.currentText()
+        json_data["days_threshold"] = days_threshold
         json_data["limits"]["min"] = min_val
         json_data["limits"]["max"] = max_val
         with open('./config.json', 'w') as f:
             json.dump(json_data, f)
+        change_param_size(int(params_interval / plots_interval))
 
     def load(self):
-        global method_path, fspec_path, int_interval, trans_interval, simulation
+        global method_path, fspec_path, params_interval, plots_interval, simulation, days_threshold
         with open('./config.json', 'r', encoding="utf-8") as file:
             json_data = json.load(file)
         if json_data["simulation"] == "1":
@@ -206,27 +232,32 @@ class ModalPopup(QDialog):
         method_path = json_data["method_path"]
         self.path2_label.setText(json_data["fspec_path"])
         fspec_path = json_data["fspec_path"]
-        self.combo1.setCurrentText(json_data["int_period"])
-        int_interval = int(json_data["int_period"][0:2])
-        self.combo2.setCurrentText(json_data["trans_period"])
-        s = json_data["trans_period"]
+        self.combo1.setCurrentText(json_data["plots_period"])
+        plots_interval = int(json_data["plots_period"][0:2])
+        self.combo2.setCurrentText(json_data["params_period"])
+        s = json_data["params_period"]
         if s == "1 мин":
-            trans_interval = 60
+            params_interval = 60
         elif s == "1 час":
-            trans_interval = 3600
+            params_interval = 3600
         elif s == "24 часа":
-            trans_interval = 3600 * 24
+            params_interval = 3600 * 24
         elif s == "Неделя":
-            trans_interval = 3600 * 24 * 7
+            params_interval = 3600 * 24 * 7
         elif s == "2 недели":
-            trans_interval = 3600 * 24 * 14
+            params_interval = 3600 * 24 * 14
         else:
-            trans_interval = 3600 * 24 * 30
-        self.entry1.setText(json_data["param_size"])
-        change_param_size(json_data["param_size"])
+            params_interval = 3600 * 24 * 30
+        days_threshold = int(json_data["days_threshold"])
+        self.save_entry.setText(str(days_threshold))
         self.min_entry.setText(json_data["limits"]["min"])
         self.max_entry.setText(json_data["limits"]["max"])
+        self.parent.plot2.setXRange(int(json_data["limits"]["min"]), int(json_data["limits"]["max"]))
         self.parent.plot1.setXRange(int(json_data["limits"]["min"]), int(json_data["limits"]["max"]))
+
+    def modbus_settings(self):
+        self.modbus_popup = ModbusWindow(self)
+        self.modbus_popup.show()
 
     def __init__(self, parent):
         super().__init__()
@@ -276,28 +307,21 @@ class ModalPopup(QDialog):
         layout.addLayout(path2_layout)
 
         label4 = QtWidgets.QLabel()
-        label4.setText("Период обновления спектра интенсивности")
+        label4.setText("Период обновления графиков")
         layout.addWidget(label4)
         self.combo1 = QtWidgets.QComboBox()
         self.combo1.addItems(["10 с", "20 с", "30 с", "40 с", "50 с", "60 с"])
         layout.addWidget(self.combo1)
 
         label5 = QtWidgets.QLabel()
-        label5.setText("Период обновления спектра пропускания")
+        label5.setText("Период обновления параметров")
         layout.addWidget(label5)
         self.combo2 = QtWidgets.QComboBox()
         self.combo2.addItems(["1 мин", "1 ч", "24 ч", "Неделя", "2 недели", "Месяц"])
         layout.addWidget(self.combo2)
 
-        label6 = QtWidgets.QLabel()
-        label6.setText("Размер стека параметров")
-        layout.addWidget(label6)
-        self.entry1 = QtWidgets.QLineEdit()
-        self.entry1.setValidator(QtGui.QIntValidator(1, 999, self))
-        layout.addWidget(self.entry1)
-
         label7 = QtWidgets.QLabel()
-        label7.setText("Границы спектра интенсивности по оси Х")
+        label7.setText("Границы спектров по оси Х")
         layout.addWidget(label7)
         limits_layout = QGridLayout()
         label8 = QtWidgets.QLabel()
@@ -313,7 +337,19 @@ class ModalPopup(QDialog):
         self.max_entry.setValidator(QtGui.QIntValidator())
         limits_layout.addWidget(self.max_entry, 1, 1)
         layout.addLayout(limits_layout)
+
+        label10 = QtWidgets.QLabel()
+        label10.setText("Удалять архивы старше чем, дней")
+        layout.addWidget(label10)
+        self.save_entry = QtWidgets.QLineEdit()
+        self.save_entry.setValidator(QtGui.QIntValidator())
+        layout.addWidget(self.save_entry)
         self.load()
+
+        modbus_button = QtWidgets.QPushButton()
+        modbus_button.setText("Настройки ModBus")
+        modbus_button.clicked.connect(self.modbus_settings)
+        layout.addWidget(modbus_button)
         spacer = QtWidgets.QSpacerItem(20, 200, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         layout.addItem(spacer)
         save_button = QtWidgets.QPushButton()
@@ -322,22 +358,135 @@ class ModalPopup(QDialog):
         layout.addWidget(save_button)
 
 
+class ModbusWindow(QDialog):
+    def start_client(self, device, PORT, baudrate, timeout):
+        global master, modbus_connected, device_num
+        if device == "" or timeout == "":
+            modbus_connected = False
+            self.error_label.setText("Соединение НЕ установлено")
+        else:
+            device_num = int(device)
+            try:
+                try:
+                    master = modbus_rtu.RtuMaster(
+                        serial.Serial(port=PORT, baudrate=baudrate, bytesize=8, parity='N', stopbits=1, xonxoff=0)
+                    )
+                    master.set_timeout(int(timeout))
+                    logger.info("connected")
+                    modbus_connected = True
+                    self.error_label.setText("Соединение установлено")
+                except serial.serialutil.SerialException:
+                    modbus_connected = False
+                    print("fdf")
+                    self.error_label.setText("Соединение НЕ установлено")
+            except modbus_tk.modbus.ModbusError as exc:
+                modbus_connected = False
+                logger.error("%s- Code=%d", exc, exc.get_exception_code())
+                self.error_label.setText("Соединение НЕ установлено")
+
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+        self.setFixedSize(400, 400)
+        self.setWindowTitle("Настройки ModBus")
+        self.setModal(True)
+        self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
+        layout = QVBoxLayout(self)
+        available_ports = [port.device for port in serial.tools.list_ports.comports()]
+        label1 = QtWidgets.QLabel()
+        label1.setText("Адрес устройства")
+        layout.addWidget(label1)
+        self.device_entry = QtWidgets.QLineEdit()
+        self.device_entry.setValidator(QtGui.QIntValidator())
+        layout.addWidget(self.device_entry)
+
+        label4 = QtWidgets.QLabel()
+        label4.setText("Порт")
+        layout.addWidget(label4)
+        self.ports = QtWidgets.QComboBox()
+        self.ports.addItems(available_ports)
+        layout.addWidget(self.ports)
+
+        label2 = QtWidgets.QLabel()
+        label2.setText("Скорость обмена, бит/с")
+        layout.addWidget(label2)
+        self.combo = QtWidgets.QComboBox()
+        self.combo.addItems(["1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"])
+        self.combo.setCurrentText("9600")
+        layout.addWidget(self.combo)
+
+        label3 = QtWidgets.QLabel()
+        label3.setText("Таймаут, с")
+        layout.addWidget(label3)
+        self.timeout_entry = QtWidgets.QLineEdit()
+        self.timeout_entry.setValidator(QtGui.QIntValidator())
+        layout.addWidget(self.timeout_entry)
+
+        connect_button = QtWidgets.QPushButton()
+        connect_button.setText("Соединение")
+        connect_button.clicked.connect(lambda: self.start_client(self.device_entry.text(), self.ports.currentText(),
+                                                                 self.combo.currentText(),
+                                                                 self.timeout_entry.text()))
+        layout.addWidget(connect_button)
+        self.error_label = QtWidgets.QLabel()
+        self.error_label.setText("")
+        layout.addWidget(self.error_label)
 
 
 class Ui_MainWindow(object):
+    def save_to_archive(self, conc, y):
+        global days_threshold
+        date_now = datetime.today().strftime('%y_%m_%d')
+        archive_name = f'./Archive/{date_now}.csv'
+        if os.path.exists(archive_name):
+            mode = 'a'
+        else:
+            mode = 'w'
+        with open(archive_name, mode=mode) as employee_file:
+            employee_writer = csv.writer(employee_file, delimiter=';', quotechar='"',
+                                         quoting=csv.QUOTE_MINIMAL)
+            result_to_write = [datetime.today().strftime('%y_%m_%d_%H_%M_%S')] + conc + y
+            employee_writer.writerow(result_to_write)
+
+        current_time = datetime.now()
+        directories = ["./Archive/", "./Reports/", "./Spectra/"]
+        extensions = [".csv", ".txt", ".spe"]
+        for i in range(len(directories)):
+            for filename in os.listdir(directories[i]):
+                file_path = os.path.join(directories[i], filename)
+                if filename.endswith(extensions[i]):
+                    try:
+                        date_str = filename[0:8]
+                        file_date = datetime.strptime(date_str, '%y_%m_%d')
+                        days_difference = (current_time - file_date).days
+                        if days_difference > days_threshold:
+                            os.remove(file_path)
+                    except ValueError:
+                        pass
+
     def run_thread(self):
         global stop_threads
         stop_threads = False
-        self.thread = threading.Thread(target=self.update_intensity_plot, daemon=True)
+        if self.thread is not None:
+            self.thread.join(0.01)
+        self.thread = threading.Thread(target=self.update_trans_plot, daemon=True)
         self.thread.start()
         self.start_button.setText("Стоп")
         self.start_button.clicked.connect(self.stop_thread)
+        self.settings_button.setEnabled(False)
+        self.fon_update.setEnabled(False)
+
+    def run_fix_fon_thread(self):
+        self.thread = threading.Thread(target=self.set_fixed_fon, daemon=True)
+        self.thread.start()
 
     def stop_thread(self):
         global stop_threads
         stop_threads = True
         self.start_button.setText("Старт")
         self.start_button.clicked.connect(self.run_thread)
+        self.settings_button.setEnabled(True)
+        self.fon_update.setEnabled(True)
 
     def generate_warnings(self, warning):
         self.warnings_box.clear()
@@ -374,8 +523,8 @@ class Ui_MainWindow(object):
         self.icon_label.show()
         self.stop_thread()
 
-    def update_intensity_plot(self):
-        global first_start
+    def update_trans_plot(self):
+        global first_start, zoom
         self.icon_label.hide()
         self.fspec_error.setText("")
         while not stop_threads:
@@ -383,20 +532,30 @@ class Ui_MainWindow(object):
             self.label_3.setText(str(fetch_data.scans))
             self.label_4.setText(str(fetch_data.cuv_length))
             if first_start:
+                self.plot1.enableAutoRange(axis=pg.ViewBox.YAxis)
+                self.plot2.enableAutoRange(axis=pg.ViewBox.YAxis)
                 res, warn = start_func()
                 if res == 0:
                     res, warn = init_func()
                     if res == 0:
                         x, y = read_fon_spe()
-                        self.plot2.update(x, y)
+                        self.plot1.update(x, y)
+                        os.rename("./Spectra/fon.spe", "./Spectra/current.spe")
+                        os.remove("./Spectra/current.spe")
+                        os.rename("./Spectra/original.spe", "./Spectra/fon.spe")
                         res, warn, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
                             self.param_plots(conc, False)
+                            if modbus_connected:
+                                send_conc(device_num, conc)
+                                send_res(device_num, res, conc)
                             self.generate_warnings(warn)
                             res, x, y = get_spectr_func()
                             if res == 0:
-                                self.plot1.update(x, y)
+                                self.save_to_archive(conc, y)
+                                self.plot2.update(x, y)
+                                os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
                             else:
                                 self.error_out(res)
                                 break
@@ -409,19 +568,39 @@ class Ui_MainWindow(object):
                 else:
                     self.error_out(res)
                     break
+                zoom = False
                 first_start = False
                 self.timer1.start()
                 self.timer2.start()
             else:
-                if self.timer1.hasExpired(int_interval * 1000):
-                    res, warn, conc = get_value_func()
+                if self.timer1.hasExpired(plots_interval * 1000):
+                    if not zoom:
+                        self.plot1.disableAutoRange(axis=pg.ViewBox.YAxis)
+                        self.plot2.disableAutoRange(axis=pg.ViewBox.YAxis)
+                        zoom = False
+                    res, warn = init_func()
                     if res == 0:
-                        conc = [number for number in conc if number != 0]
-                        self.param_plots(conc, False)
-                        self.generate_warnings(warn)
-                        res, x, y = get_spectr_func()
+                        x, y = read_fon_spe()
+                        self.plot1.update(x, y)
+                        os.rename("./Spectra/fon.spe", "./Spectra/current.spe")
+                        os.remove("./Spectra/current.spe")
+                        os.rename("./Spectra/original.spe", "./Spectra/fon.spe")
+                        res, warn, conc = get_value_func()
                         if res == 0:
-                            self.plot1.update(x, y)
+                            conc = [number for number in conc if number != 0]
+                            self.param_plots(conc, False)
+                            if modbus_connected:
+                                send_conc(device_num, conc)
+                                send_res(device_num, res, conc)
+                            self.generate_warnings(warn)
+                            res, x, y = get_spectr_func()
+                            if res == 0:
+                                self.save_to_archive(conc, y)
+                                self.plot2.update(x, y)
+                                os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
+                            else:
+                                self.error_out(res)
+                                break
                         else:
                             self.error_out(res)
                             break
@@ -429,16 +608,52 @@ class Ui_MainWindow(object):
                         self.error_out(res)
                         break
                     self.timer1.restart()
-                if self.timer2.hasExpired(trans_interval * 1000):
-                    self.update_trans_plot()
+                if self.timer2.hasExpired(params_interval * 1000):
+                    for i in range(len(parameter)):
+                        parameter[i].clear()
                     self.timer2.restart()
 
-    def update_trans_plot(self):
-        res, warn = init_func()
-        if res == 0:
-            x, y = read_fon_spe()
-            self.plot2.update(x, y)
-        print("Fon updated")
+    def set_fixed_fon(self):
+        global first_start
+        self.start_button.setEnabled(False)
+        self.settings_button.setEnabled(False)
+        if first_start:
+            res, warn = start_func()
+            if res == 0:
+                res, warn = init_func()
+                if res == 0:
+                    if os.path.exists("./Spectra/original.spe"):
+                        os.remove("./Spectra/original.spe")
+                    os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
+                    first_start = False
+                    date = datetime.today().strftime('%d.%m.%y %H:%M:%S')
+                    self.last_updated.setText("Дата обновления:\n" + date)
+                    with open('./config.json', 'r', encoding="utf-8") as file:
+                        json_data = json.load(file)
+                    json_data["fon_updated"] = date
+                    with open('./config.json', 'w') as f:
+                        json.dump(json_data, f)
+                else:
+                    self.error_out(res)
+            else:
+                self.error_out(res)
+        else:
+            res, warn = init_func()
+            if res == 0:
+                date = datetime.today().strftime('%d.%m.%y %H:%M:%S')
+                self.last_updated.setText("Дата обновления:\n" + date)
+                with open('./config.json', 'r', encoding="utf-8") as file:
+                    json_data = json.load(file)
+                json_data["fon_updated"] = date
+                with open('./config.json', 'w') as f:
+                    json.dump(json_data, f)
+                if os.path.exists("./Spectra/original.spe"):
+                    os.remove("./Spectra/original.spe")
+                os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
+            else:
+                self.error_out(res)
+        self.start_button.setEnabled(True)
+        self.settings_button.setEnabled(True)
 
     def param_plots(self, conc, build):
         global parameter
@@ -465,11 +680,12 @@ class Ui_MainWindow(object):
 
                 widget = pg.GraphicsLayoutWidget()
                 widget.setFixedHeight(150)
-                plot = param_plot.ParameterPlot(stack_size=5)
+                plot = param_plot.ParameterPlot(stack_size=int(params_interval / plots_interval))
                 parameter.append(plot)
                 widget.addItem(plot)
                 widget.setBackground("w")
                 plot.update(conc[i])
+                plot.y.pop()
                 layout.addLayout(param_layout, i, 0)
                 layout.addWidget(widget, i, 1)
         else:
@@ -535,7 +751,8 @@ class Ui_MainWindow(object):
         error_font.setBold(True)
         self.label_layout = QHBoxLayout()
         self.icon_label = QtWidgets.QLabel()
-        self.icon_label.setPixmap(QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxWarning).pixmap(32))
+        self.icon_label.setPixmap(
+            QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxWarning).pixmap(32))
         self.icon_label.hide()
         self.label_layout.addStretch()
 
@@ -545,12 +762,20 @@ class Ui_MainWindow(object):
         self.fspec_error.setFont(error_font)
         self.fspec_error.setAlignment(QtCore.Qt.AlignCenter)
         self.label_layout.addWidget(self.fspec_error)
-        start_layout.addLayout(self.label_layout, 1, 0, 1, 3)
 
-        self.settings_button = QtWidgets.QPushButton()
-        self.settings_button.setFixedSize(160, 100)
-        self.settings_button.setFont(button_font)
-        self.settings_button.clicked.connect(self.open_settings)
+        self.fon_update = QtWidgets.QPushButton()
+        self.fon_update.setFixedSize(160, 100)
+        self.fon_update.setText("Фиксировать\nспектр")
+        self.fon_update.setFont(button_font)
+        self.fon_update.clicked.connect(self.run_fix_fon_thread)
+        start_layout.addWidget(self.fon_update, 0, 3)
+        self.last_updated = QtWidgets.QLabel()
+        self.last_updated.setAlignment(QtCore.Qt.AlignCenter)
+        with open('./config.json', 'r', encoding="utf-8") as file:
+            json_data = json.load(file)
+        self.last_updated.setText("Дата обновления:\n" + json_data["fon_updated"])
+        start_layout.addWidget(self.last_updated, 1, 3)
+        start_layout.addLayout(self.label_layout, 1, 0, 1, 3)
 
         self.res_layout = QVBoxLayout()
 
@@ -597,6 +822,14 @@ class Ui_MainWindow(object):
         self.cuv_layout.addWidget(self.label_4)
         self.cuv_layout.addWidget(self.label_5)
 
+        self.settings_button = QtWidgets.QPushButton()
+        self.settings_button.setFixedSize(160, 100)
+        self.settings_button.setFont(button_font)
+        self.settings_button.clicked.connect(self.open_settings)
+        set_layout = QVBoxLayout()
+        set_layout.addWidget(self.settings_button)
+        spacer = QtWidgets.QSpacerItem(0, 40, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        set_layout.addItem(spacer)
         self.graphs = QHBoxLayout()
 
         self.params_layout = QHBoxLayout()
@@ -631,7 +864,7 @@ class Ui_MainWindow(object):
         self.settings.addLayout(self.res_layout)
         self.settings.addLayout(self.scans_layout)
         self.settings.addLayout(self.cuv_layout)
-        self.settings.addWidget(self.settings_button)
+        self.settings.addLayout(set_layout)
 
         self.main_layout.addLayout(self.settings)
         self.main_layout.addLayout(self.graphs)
@@ -642,7 +875,6 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
-
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate

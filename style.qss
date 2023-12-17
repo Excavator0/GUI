@@ -12,3 +12,6 @@ QPushButton:focus {
   background-color: #295a8c;
   border: 2px solid #25507a;
 }
+QPushButton:disabled {
+  background-color: gray;
+}

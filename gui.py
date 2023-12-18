@@ -468,6 +468,18 @@ class Ui_MainWindow(object):
                             os.remove(file_path)
                     except ValueError:
                         pass
+        for filename in os.listdir("./Log/"):
+            file_path = os.path.join("./Log/", filename)
+            if filename.endswith(".log"):
+                try:
+                    date_str = filename[11:19]
+                    print(date_str)
+                    file_date = datetime.strptime(date_str, '%y_%m_%d')
+                    days_difference = (current_time - file_date).days
+                    if days_difference > days_threshold:
+                        os.remove(file_path)
+                except ValueError:
+                    pass
 
     def run_thread(self):
         global stop_threads
@@ -560,6 +572,7 @@ class Ui_MainWindow(object):
                             if res == 0:
                                 self.save_to_archive(conc, y)
                                 self.plot2.update(x, y)
+
                                 os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
                             else:
                                 self.error_out(res)

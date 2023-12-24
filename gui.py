@@ -9,6 +9,7 @@ import time
 import serial
 import modbus_tk
 import modbus_tk.defines as cst
+from PyQt5.QtCore import QTime
 from modbus_tk import modbus_rtu
 from datetime import datetime
 
@@ -43,11 +44,15 @@ logger = modbus_tk.utils.create_logger("console")
 
 
 def send_conc(device, conc):
-    logger.info(master.execute(device, cst.WRITE_MULTIPLE_COILS, 0, output_value=conc))
-
+    data_format = ">"
+    for i in range(len(conc)):
+        data_format = data_format + "f"
+    logger.info(master.execute(device, cst.WRITE_MULTIPLE_REGISTERS, 0, output_value=conc, data_format=data_format))
+    logger.info(master.execute(device, cst.READ_HOLDING_REGISTERS, 0, 2, data_format='>f'))
 
 def send_res(device, res, warn):
-    logger.info(master.execute(device, cst.WRITE_MULTIPLE_COILS, 100, output_value=[res, warn]))
+    logger.info(master.execute(device, cst.WRITE_MULTIPLE_REGISTERS, 100, output_value=[res, warn]))
+    logger.info(master.execute(device, cst.READ_HOLDING_REGISTERS, 100, 102))
 
 
 # GAS.dll functions below
@@ -67,7 +72,17 @@ def read_fon_spe():
     newFile.write(binary_data)
 
     arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
-    print(len(arr))
+    binary_data = b""
+    with open('./Spectra/original.spe', 'rb') as file:
+        data = file.readlines()
+        for line in data[36:-1]:
+            binary_data = binary_data + line
+    newFile = open("./Spectra/values_bin.txt", "wb")
+    newFile.write(binary_data)
+
+    second_arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
+    for i in range(len(arr)):
+        arr[i] = arr[i] - second_arr[i]
     x_values = []
     for i in range(len(arr)):
         x_values.append(x_first + (i * ((x_last - x_first) / len(arr))))
@@ -427,6 +442,9 @@ class ModbusWindow(QDialog):
         self.timeout_entry.setValidator(QtGui.QIntValidator())
         layout.addWidget(self.timeout_entry)
 
+        label5 = QtWidgets.QLabel()
+        label5.setText("Карта регистров:\nПараметры записываются начиная с адреса 0\nКоды ошибок и предупреждений с 100 по 102")
+        layout.addWidget(label5)
         connect_button = QtWidgets.QPushButton()
         connect_button.setText("Соединение")
         connect_button.clicked.connect(lambda: self.start_client(self.device_entry.text(), self.ports.currentText(),
@@ -473,7 +491,6 @@ class Ui_MainWindow(object):
             if filename.endswith(".log"):
                 try:
                     date_str = filename[11:19]
-                    print(date_str)
                     file_date = datetime.strptime(date_str, '%y_%m_%d')
                     days_difference = (current_time - file_date).days
                     if days_difference > days_threshold:
@@ -502,8 +519,6 @@ class Ui_MainWindow(object):
         self.start_button.setText("Старт")
         self.start_button.clicked.connect(self.run_thread)
         self.fon_update.setEnabled(True)
-        if os.path.exists("./Spectra/fon.spe"):
-            os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
 
     def generate_warnings(self, warning):
         self.warnings_box.clear()
@@ -514,22 +529,6 @@ class Ui_MainWindow(object):
         for i in range(len(warnings)):
             if warnings[i] == '1':
                 self.warnings_box.addItem(str(json_data["warnings"].get(str(i))))
-
-    # def error_window(self, res):
-    #     window = QDialog(self.centralwidget)
-    #     window.setFixedSize(400, 200)
-    #     window.setWindowTitle("Ошибка!")
-    #     window.setModal(True)
-    #     window.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
-    #
-    #     with open('./config.json', 'r', encoding="utf-8") as file:
-    #         json_data = json.load(file)
-    #
-    #     layout = QHBoxLayout(window)
-    #     label = QtWidgets.QLabel()
-    #     label.setText(str(json_data["errors"].get(str(res))))
-    #     layout.addWidget(label)
-    #     window.exec_()
 
     def error_out(self, res):
         with open('./config.json', 'r', encoding="utf-8") as file:
@@ -557,23 +556,18 @@ class Ui_MainWindow(object):
                     if res == 0:
                         x, y = read_fon_spe()
                         self.plot1.update(x, y)
-                        os.rename("./Spectra/fon.spe", "./Spectra/current.spe")
-                        os.remove("./Spectra/current.spe")
-                        os.rename("./Spectra/original.spe", "./Spectra/fon.spe")
                         res, warn, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
                             self.param_plots(conc, False)
                             if modbus_connected:
                                 send_conc(device_num, conc)
-                                send_res(device_num, res, conc)
+                                send_res(device_num, res, warn)
                             self.generate_warnings(warn)
                             res, x, y = get_spectr_func()
                             if res == 0:
                                 self.save_to_archive(conc, y)
                                 self.plot2.update(x, y)
-
-                                os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
                             else:
                                 self.error_out(res)
                                 break
@@ -600,22 +594,18 @@ class Ui_MainWindow(object):
                     if res == 0:
                         x, y = read_fon_spe()
                         self.plot1.update(x, y)
-                        os.rename("./Spectra/fon.spe", "./Spectra/current.spe")
-                        os.remove("./Spectra/current.spe")
-                        os.rename("./Spectra/original.spe", "./Spectra/fon.spe")
                         res, warn, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
                             self.param_plots(conc, False)
                             if modbus_connected:
                                 send_conc(device_num, conc)
-                                send_res(device_num, res, conc)
+                                send_res(device_num, res, warn)
                             self.generate_warnings(warn)
                             res, x, y = get_spectr_func()
                             if res == 0:
                                 self.save_to_archive(conc, y)
                                 self.plot2.update(x, y)
-                                os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
                             else:
                                 self.error_out(res)
                                 break
@@ -700,14 +690,13 @@ class Ui_MainWindow(object):
                 parameter.append(plot)
                 widget.addItem(plot)
                 widget.setBackground("w")
-                plot.update(conc[i], plots_interval)
-                plot.y.pop()
                 layout.addLayout(param_layout, i, 0)
                 layout.addWidget(widget, i, 1)
         else:
             for i in range(len(conc)):
                 self.param_values[i].setText("{:.2f}".format(conc[i]))
-                parameter[i].update(conc[i], plots_interval)
+                parameter[i].update(conc[i])
+                parameter[i].show()
 
     def open_settings(self):
         self.modal_popup = ModalPopup(self)
@@ -743,7 +732,7 @@ class Ui_MainWindow(object):
         self.start_button.setFont(button_font)
         self.start_button.setObjectName("start_button")
         self.start_button.clicked.connect(self.run_thread)
-        if not os.path.exists("./Spectra/original.spe") and not os.path.exists("./Spectra/fon.spe"):
+        if not os.path.exists("./Spectra/original.spe"):
             self.start_button.setEnabled(False)
         start_layout.addWidget(self.start_button, 0, 0)
 

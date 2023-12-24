@@ -11,13 +11,8 @@ class TransmissionPlot(pg.PlotItem):
         self.intensity_plot = self.plot()
         self.getAxis("left").setTextPen("black")
         self.getAxis("bottom").setTextPen("black")
-        self.first = True
 
     def update(self, x, y):
         self.clear()
         intensity_data = pg.PlotDataItem(x, y, pen=(2, 80, 158))
         self.addItem(intensity_data)
-        if self.first:
-            ylimits = self.viewRange()
-            self.setYRange(ylimits[1][0] * 0.08, ylimits[1][1] * 0.08)
-            self.first = False

@@ -37,6 +37,8 @@ parameter = []
 days_threshold = 0
 modbus_connected = False
 device_num = 0
+port = ''
+timeout = 0
 zoom = True
 
 master = None
@@ -49,6 +51,7 @@ def send_conc(device, conc):
         data_format = data_format + "f"
     logger.info(master.execute(device, cst.WRITE_MULTIPLE_REGISTERS, 0, output_value=conc, data_format=data_format))
     logger.info(master.execute(device, cst.READ_HOLDING_REGISTERS, 0, 2, data_format='>f'))
+
 
 def send_res(device, res, warn):
     logger.info(master.execute(device, cst.WRITE_MULTIPLE_REGISTERS, 100, output_value=[res, warn]))
@@ -70,8 +73,8 @@ def read_fon_spe():
         x_last = float(data[33].decode("utf-8")[data[33].decode("utf-8").find("=") + 1:])
     newFile = open("./Spectra/values_bin.txt", "wb")
     newFile.write(binary_data)
-
     arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
+    x_values = []
     binary_data = b""
     with open('./Spectra/original.spe', 'rb') as file:
         data = file.readlines()
@@ -82,11 +85,9 @@ def read_fon_spe():
 
     second_arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
     for i in range(len(arr)):
-        arr[i] = arr[i] - second_arr[i]
-    x_values = []
-    for i in range(len(arr)):
         x_values.append(x_first + (i * ((x_last - x_first) / len(arr))))
-    return x_values, arr
+    return x_values, arr, second_arr
+
 
 
 def start_func():
@@ -126,29 +127,40 @@ def get_value_func():
     return result, warning[0], list(conc)
 
 
-def get_size_func():
-    get_size_function = my_dll.GetSize
-    get_size_function.restypes = [ctypes.c_int]
-    result = get_size_function()
-    print("Result of getSize:", result)
-    return result
+# def get_size_func():
+#     get_size_function = my_dll.GetSize
+#     get_size_function.restypes = [ctypes.c_int]
+#     result = get_size_function()
+#     print("Result of getSize:", result)
+#     return result
 
 
 def get_spectr_func():
-    length = get_size_func()
-    get_spectr_function = my_dll.GetSpectr
-    get_spectr_function.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
-                                    ctypes.POINTER(ctypes.c_float)]
-    get_spectr_function.restypes = [ctypes.c_int]
-    x_o = (ctypes.c_float * 1)()
-    x_s = (ctypes.c_float * 1)()
-    y = (ctypes.c_float * length)()
-    result = get_spectr_function(x_o, x_s, y)
-    print("Result of getSpectr:", result)
-    x = []
-    for i in range(length):
-        x.append(x_o[0] + (i * x_s[0]))
-    return result, x, list(y)
+    binary_data = b""
+    with open('./Spectra/fon.spe', 'rb') as file:
+        data = file.readlines()
+        for line in data[36:-1]:
+            binary_data = binary_data + line
+        x_first = float(data[32].decode("utf-8")[data[32].decode("utf-8").find("=") + 1:])
+        x_last = float(data[33].decode("utf-8")[data[33].decode("utf-8").find("=") + 1:])
+    newFile = open("./Spectra/values_bin.txt", "wb")
+    newFile.write(binary_data)
+    arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
+    x_values = []
+    binary_data = b""
+    with open('./Spectra/original.spe', 'rb') as file:
+        data = file.readlines()
+        for line in data[36:-1]:
+            binary_data = binary_data + line
+    newFile = open("./Spectra/values_bin.txt", "wb")
+    newFile.write(binary_data)
+
+    second_arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
+    for i in range(len(arr)):
+        arr[i] = arr[i] - second_arr[i]
+    for i in range(len(arr)):
+        x_values.append(x_first + (i * ((x_last - x_first) / len(arr))))
+    return x_values, list(arr)
 
 
 def change_param_size(text):
@@ -263,6 +275,7 @@ class ModalPopup(QDialog):
             params_interval = 3600 * 24 * 14
         else:
             params_interval = 3600 * 24 * 30
+        change_param_size(int(params_interval / plots_interval))
         days_threshold = int(json_data["days_threshold"])
         self.save_entry.setText(str(days_threshold))
         self.min_entry.setText(json_data["limits"]["min"])
@@ -379,13 +392,22 @@ class ModalPopup(QDialog):
 
 
 class ModbusWindow(QDialog):
-    def start_client(self, device, PORT, baudrate, timeout):
-        global master, modbus_connected, device_num
+    def stop_client(self):
+        global master, modbus_connected
+        master = None
+        modbus_connected = False
+        self.error_label.setText("")
+        self.connect_button.setText("Соединение")
+
+    def start_client(self, device, PORT, baudrate, timeoutentry):
+        global master, modbus_connected, device_num, port, timeout
+        port = PORT
         if device == "" or timeout == "":
             modbus_connected = False
             self.error_label.setText("Соединение НЕ установлено")
         else:
             device_num = int(device)
+            timeout = int(timeoutentry)
             try:
                 try:
                     master = modbus_rtu.RtuMaster(
@@ -395,6 +417,7 @@ class ModbusWindow(QDialog):
                     logger.info("connected")
                     modbus_connected = True
                     self.error_label.setText("Соединение установлено")
+                    self.connect_button.setText("Отключиться")
                 except serial.serialutil.SerialException:
                     modbus_connected = False
                     print("fdf")
@@ -404,6 +427,12 @@ class ModbusWindow(QDialog):
                 logger.error("%s- Code=%d", exc, exc.get_exception_code())
                 self.error_label.setText("Соединение НЕ установлено")
 
+    def toggle_label_and_function(self, device, PORT, baudrate, timeoutentry):
+        if self.connect_button.text() == "Соединение":
+            self.start_client(device, PORT, baudrate, timeoutentry)
+        else:
+            self.stop_client()
+
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
@@ -412,12 +441,14 @@ class ModbusWindow(QDialog):
         self.setModal(True)
         self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
         layout = QVBoxLayout(self)
-        available_ports = [port.device for port in serial.tools.list_ports.comports()]
+        available_ports = [i.device for i in serial.tools.list_ports.comports()]
         label1 = QtWidgets.QLabel()
         label1.setText("Адрес устройства")
         layout.addWidget(label1)
         self.device_entry = QtWidgets.QLineEdit()
         self.device_entry.setValidator(QtGui.QIntValidator())
+        if device_num != 0:
+            self.device_entry.setText(str(device_num))
         layout.addWidget(self.device_entry)
 
         label4 = QtWidgets.QLabel()
@@ -425,6 +456,8 @@ class ModbusWindow(QDialog):
         layout.addWidget(label4)
         self.ports = QtWidgets.QComboBox()
         self.ports.addItems(available_ports)
+        if port != '':
+            self.ports.setCurrentText(port)
         layout.addWidget(self.ports)
 
         label2 = QtWidgets.QLabel()
@@ -440,19 +473,28 @@ class ModbusWindow(QDialog):
         layout.addWidget(label3)
         self.timeout_entry = QtWidgets.QLineEdit()
         self.timeout_entry.setValidator(QtGui.QIntValidator())
+        if timeout != 0:
+            self.timeout_entry.setText(str(timeout))
         layout.addWidget(self.timeout_entry)
 
         label5 = QtWidgets.QLabel()
-        label5.setText("Карта регистров:\nПараметры записываются начиная с адреса 0\nКоды ошибок и предупреждений с 100 по 102")
+        label5.setText(
+            "Карта регистров:\nПараметры записываются начиная с адреса 0\nКоды ошибок и предупреждений с 100 по 102")
         layout.addWidget(label5)
-        connect_button = QtWidgets.QPushButton()
-        connect_button.setText("Соединение")
-        connect_button.clicked.connect(lambda: self.start_client(self.device_entry.text(), self.ports.currentText(),
-                                                                 self.combo.currentText(),
-                                                                 self.timeout_entry.text()))
-        layout.addWidget(connect_button)
+        self.connect_button = QtWidgets.QPushButton()
         self.error_label = QtWidgets.QLabel()
         self.error_label.setText("")
+        if modbus_connected:
+            self.connect_button.setText("Отключиться")
+            self.error_label.setText("Соединение установлено")
+        else:
+            self.connect_button.setText("Соединение")
+        self.connect_button.clicked.connect(lambda: self.toggle_label_and_function(self.device_entry.text(),
+                                                                                   self.ports.currentText(),
+                                                                                   self.combo.currentText(),
+                                                                                   self.timeout_entry.text()))
+        layout.addWidget(self.connect_button)
+
         layout.addWidget(self.error_label)
 
 
@@ -554,8 +596,8 @@ class Ui_MainWindow(object):
                 if res == 0:
                     res, warn = init_func()
                     if res == 0:
-                        x, y = read_fon_spe()
-                        self.plot1.update(x, y)
+                        x, y, y2 = read_fon_spe()
+                        self.plot1.update(x, y, y2)
                         res, warn, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
@@ -564,13 +606,9 @@ class Ui_MainWindow(object):
                                 send_conc(device_num, conc)
                                 send_res(device_num, res, warn)
                             self.generate_warnings(warn)
-                            res, x, y = get_spectr_func()
-                            if res == 0:
-                                self.save_to_archive(conc, y)
-                                self.plot2.update(x, y)
-                            else:
-                                self.error_out(res)
-                                break
+                            x, y = get_spectr_func()
+                            self.save_to_archive(conc, y)
+                            self.plot2.update(x, y)
                         else:
                             self.error_out(res)
                             break
@@ -592,8 +630,8 @@ class Ui_MainWindow(object):
                         zoom = False
                     res, warn = init_func()
                     if res == 0:
-                        x, y = read_fon_spe()
-                        self.plot1.update(x, y)
+                        x, y, y2 = read_fon_spe()
+                        self.plot1.update(x, y, y2)
                         res, warn, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
@@ -602,13 +640,9 @@ class Ui_MainWindow(object):
                                 send_conc(device_num, conc)
                                 send_res(device_num, res, warn)
                             self.generate_warnings(warn)
-                            res, x, y = get_spectr_func()
-                            if res == 0:
-                                self.save_to_archive(conc, y)
-                                self.plot2.update(x, y)
-                            else:
-                                self.error_out(res)
-                                break
+                            x, y = get_spectr_func()
+                            self.save_to_archive(conc, y)
+                            self.plot2.update(x, y)
                         else:
                             self.error_out(res)
                             break

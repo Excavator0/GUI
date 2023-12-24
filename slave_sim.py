@@ -1,14 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf_8 -*-
-"""
- Modbus TestKit: Implementation of Modbus protocol in python
-
- (C)2009 - Luc Jean - luc.jean@gmail.com
- (C)2009 - Apidev - http://www.apidev.fr
-
- This is distributed under GNU LGPL license, see license.txt
-"""
-
 import sys
 
 import modbus_tk
@@ -18,13 +7,11 @@ import serial
 
 
 PORT = "COM4"
-#PORT = '/dev/ptyp5'
 
 def main():
     """main"""
     logger = modbus_tk.utils.create_logger(name="console", record_format="%(message)s")
 
-    #Create the server
     server = modbus_rtu.RtuServer(serial.Serial(PORT))
 
     try:

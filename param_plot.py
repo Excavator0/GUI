@@ -3,6 +3,30 @@ from datetime import datetime
 import pyqtgraph as pg
 from collections import deque
 
+import pytz
+
+UNIX_EPOCH_naive = datetime(1970, 1, 1, 0, 0)  # offset-naive datetime
+UNIX_EPOCH_offset_aware = datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)  # offset-aware datetime
+UNIX_EPOCH = UNIX_EPOCH_naive
+
+TS_MULT_us = 1e6
+
+
+def now_timestamp(ts_mult=TS_MULT_us, epoch=UNIX_EPOCH):
+    return int((datetime.now() - epoch).total_seconds() * ts_mult)
+
+
+def int2dt(ts, ts_mult=TS_MULT_us):
+    return datetime.utcfromtimestamp(float(ts) / ts_mult)
+
+
+class TimeAxisItem(pg.AxisItem):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def tickStrings(self, values, scale, spacing):
+        return [int2dt(value).strftime("%H:%M:%S") for value in values]
+
 
 class ParameterPlot(pg.PlotItem):
     def __init__(self, parent=None, name=None, labels=None, title=None,
@@ -13,23 +37,18 @@ class ParameterPlot(pg.PlotItem):
         self.plot = self.plot()
         self.y = deque(maxlen=self.stack_size)
         self.x = deque(maxlen=self.stack_size)
-        self.counter = 0
-        self.times = []
 
     def update(self, conc):
         self.clear()
         self.y.append(conc)
-        self.counter += 1
-        self.x.append(self.counter)
-        self.time_now = datetime.now().strftime("%H:%M:%S")
-        self.times.append((self.counter, self.time_now))
-        param_data = pg.PlotDataItem(list(self.x), list(self.y), pen=None, symbol='o')
+        self.x.append(now_timestamp())
+        param_data = pg.PlotDataItem(list(self.x), list(self.y), pen=None, symbol='o', symbolSize=6)
+        date_axis = TimeAxisItem(orientation='bottom')
+        self.setAxisItems(axisItems={'bottom': date_axis})
 
         self.addItem(param_data)
-        ax = self.getAxis('bottom')
-        ax.setTicks([self.times[-self.stack_size:]])
 
     def change_size(self, new_size):
         self.y = deque(self.y, maxlen=new_size)
         self.x = deque(self.x, maxlen=new_size)
-        self.counter = 0
+        self.stack_size = new_size

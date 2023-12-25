@@ -1,4 +1,6 @@
+import struct
 import sys
+import time
 
 import modbus_tk
 import modbus_tk.defines as cst
@@ -16,7 +18,6 @@ def main():
 
     try:
         logger.info("running...")
-        logger.info("enter 'quit' for closing the server")
 
         server.start()
 
@@ -24,51 +25,16 @@ def main():
         slave_1.add_block('one', cst.HOLDING_REGISTERS, 0, 100)
         slave_1.add_block('two', cst.HOLDING_REGISTERS, 100, 110)
         while True:
-            cmd = sys.stdin.readline()
-            args = cmd.split(' ')
-
-            if cmd.find('quit') == 0:
-                sys.stdout.write('bye-bye\r\n')
-                break
-
-            elif args[0] == 'add_slave':
-                slave_id = int(args[1])
-                server.add_slave(slave_id)
-                sys.stdout.write('done: slave %d added\r\n' % (slave_id))
-
-            elif args[0] == 'add_block':
-                slave_id = int(args[1])
-                name = args[2]
-                block_type = int(args[3])
-                starting_address = int(args[4])
-                length = int(args[5])
-                slave = server.get_slave(slave_id)
-                slave.add_block(name, block_type, starting_address, length)
-                sys.stdout.write('done: block %s added\r\n' % (name))
-
-            elif args[0] == 'set_values':
-                slave_id = int(args[1])
-                name = args[2]
-                address = int(args[3])
-                values = []
-                for val in args[4:]:
-                    values.append(int(val))
-                slave = server.get_slave(slave_id)
-                slave.set_values(name, address, values)
-                values = slave.get_values(name, address, len(values))
-                sys.stdout.write('done: values written: %s\r\n' % (str(values)))
-
-            elif args[0] == 'get_values':
-                slave_id = int(args[1])
-                name = args[2]
-                address = int(args[3])
-                length = int(args[4])
-                slave = server.get_slave(slave_id)
-                values = slave.get_values(name, address, length)
-                sys.stdout.write('done: values read: %s\r\n' % (str(values)))
-
-            else:
-                sys.stdout.write("unknown command %s\r\n" % (args[0]))
+            slave = server.get_slave(1)
+            values = slave.get_values('one', 0, 32)
+            for i in range(16):
+                combined_value = (values[i * 2] << 16) | values[(i * 2) + 1]
+                res = struct.unpack('>f', struct.pack('>I', combined_value))[0]
+                sys.stdout.write('параметр %s: %s; ' % (str(i+1), str(res)))
+            sys.stdout.write('\n')
+            values = slave.get_values('two', 100, 2)
+            sys.stdout.write('коды ошибки и предупреждений: %s\r\n' % (str(values)))
+            time.sleep(10)
     finally:
         server.stop()
 

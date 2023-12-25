@@ -611,12 +611,18 @@ class Ui_MainWindow(object):
                             self.plot2.update(x, y)
                         else:
                             self.error_out(res)
+                            if modbus_connected:
+                                send_res(device_num, res, warn)
                             break
                     else:
                         self.error_out(res)
+                        if modbus_connected:
+                            send_res(device_num, res, warn)
                         break
                 else:
                     self.error_out(res)
+                    if modbus_connected:
+                        send_res(device_num, res, warn)
                     break
                 zoom = False
                 first_start = False
@@ -645,9 +651,13 @@ class Ui_MainWindow(object):
                             self.plot2.update(x, y)
                         else:
                             self.error_out(res)
+                            if modbus_connected:
+                                send_res(device_num, res, warn)
                             break
                     else:
                         self.error_out(res)
+                        if modbus_connected:
+                            send_res(device_num, res, warn)
                         break
                     self.timer1.restart()
                 if self.timer2.hasExpired(params_interval * 1000):
@@ -676,8 +686,12 @@ class Ui_MainWindow(object):
                         json.dump(json_data, f)
                 else:
                     self.error_out(res)
+                    if modbus_connected:
+                        send_res(device_num, res, warn)
             else:
                 self.error_out(res)
+                if modbus_connected:
+                    send_res(device_num, res, warn)
         else:
             res, warn = init_func()
             if res == 0:
@@ -693,6 +707,8 @@ class Ui_MainWindow(object):
                 os.rename("./Spectra/fon.spe", "./Spectra/original.spe")
             else:
                 self.error_out(res)
+                if modbus_connected:
+                    send_res(device_num, res, warn)
         self.start_button.setEnabled(True)
 
     def param_plots(self, conc, build):

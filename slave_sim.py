@@ -8,12 +8,12 @@ from modbus_tk import modbus_rtu
 import serial
 
 
-PORT = "COM4"
 
 def main():
     """main"""
     logger = modbus_tk.utils.create_logger(name="console", record_format="%(message)s")
-
+    print("Введите порт:")
+    PORT = input()
     server = modbus_rtu.RtuServer(serial.Serial(PORT))
 
     try:

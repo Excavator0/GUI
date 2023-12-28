@@ -31,7 +31,7 @@ simulation = 1
 method_path = "test-2.mtg"
 fspec_path = "Не выбран"
 plots_interval = 10
-params_interval = 60
+params_interval = "1 ч"
 stop_threads = True
 parameter = []
 days_threshold = 0
@@ -96,8 +96,6 @@ def start_func():
     start_function.restypes = [ctypes.c_int]
     warning = (ctypes.c_int * 1)()
     result = start_function(warning)
-    print("Result of start:", result)
-    print(warning[0])
     return result, warning[0]
 
 
@@ -107,8 +105,6 @@ def init_func():
     init_function.restypes = [ctypes.c_int]
     warning = (ctypes.c_int * 1)()
     result = init_function(warning)
-    print("Result of init:", result)
-    print(warning[0])
     return result, warning[0]
 
 
@@ -122,17 +118,7 @@ def get_value_func():
     conc = (ctypes.c_double * 16)()
     password = b""
     result = getValue_function(method, conc, warning, password)
-    print("Result of getValue:", result)
-    print(list(conc))
     return result, warning[0], list(conc)
-
-
-# def get_size_func():
-#     get_size_function = my_dll.GetSize
-#     get_size_function.restypes = [ctypes.c_int]
-#     result = get_size_function()
-#     print("Result of getSize:", result)
-#     return result
 
 
 def get_spectr_func():
@@ -198,19 +184,7 @@ class ModalPopup(QDialog):
             config.write(configfile)
 
         plots_interval = int(self.combo1.currentText()[0:2])
-        s = self.combo2.currentText()
-        if s == "1 мин":
-            params_interval = 60
-        elif s == "1 час":
-            params_interval = 3600
-        elif s == "24 часа":
-            params_interval = 3600 * 24
-        elif s == "Неделя":
-            params_interval = 3600 * 24 * 7
-        elif s == "2 недели":
-            params_interval = 3600 * 24 * 14
-        else:
-            params_interval = 3600 * 24 * 30
+        params_interval = self.combo2.currentText()
         max_val = "8000"
         min_val = "0"
         if self.max_entry.text() != '':
@@ -243,7 +217,6 @@ class ModalPopup(QDialog):
         json_data["limits"]["max"] = max_val
         with open('./config.json', 'w') as f:
             json.dump(json_data, f)
-        change_param_size(int(params_interval / plots_interval))
 
     def load(self):
         global method_path, fspec_path, params_interval, plots_interval, simulation, days_threshold
@@ -262,20 +235,7 @@ class ModalPopup(QDialog):
         self.combo1.setCurrentText(json_data["plots_period"])
         plots_interval = int(json_data["plots_period"][0:2])
         self.combo2.setCurrentText(json_data["params_period"])
-        s = json_data["params_period"]
-        if s == "1 мин":
-            params_interval = 60
-        elif s == "1 час":
-            params_interval = 3600
-        elif s == "24 часа":
-            params_interval = 3600 * 24
-        elif s == "Неделя":
-            params_interval = 3600 * 24 * 7
-        elif s == "2 недели":
-            params_interval = 3600 * 24 * 14
-        else:
-            params_interval = 3600 * 24 * 30
-        change_param_size(int(params_interval / plots_interval))
+        params_interval = json_data["params_period"]
         days_threshold = int(json_data["days_threshold"])
         self.save_entry.setText(str(days_threshold))
         self.min_entry.setText(json_data["limits"]["min"])
@@ -345,7 +305,7 @@ class ModalPopup(QDialog):
         label5.setText("Период обновления параметров")
         layout.addWidget(label5)
         self.combo2 = QtWidgets.QComboBox()
-        self.combo2.addItems(["1 мин", "1 ч", "24 ч", "Неделя", "2 недели", "Месяц"])
+        self.combo2.addItems(["1 ч", "12 ч", "24 ч"])
         layout.addWidget(self.combo2)
 
         label7 = QtWidgets.QLabel()
@@ -420,7 +380,6 @@ class ModbusWindow(QDialog):
                     self.connect_button.setText("Отключиться")
                 except serial.serialutil.SerialException:
                     modbus_connected = False
-                    print("fdf")
                     self.error_label.setText("Соединение НЕ установлено")
             except modbus_tk.modbus.ModbusError as exc:
                 modbus_connected = False
@@ -627,7 +586,6 @@ class Ui_MainWindow(object):
                 zoom = False
                 first_start = False
                 self.timer1.start()
-                self.timer2.start()
             else:
                 if self.timer1.hasExpired(plots_interval * 1000):
                     if not zoom:
@@ -660,10 +618,6 @@ class Ui_MainWindow(object):
                             send_res(device_num, res, warn)
                         break
                     self.timer1.restart()
-                if self.timer2.hasExpired(params_interval * 1000):
-                    for i in range(len(parameter)):
-                        parameter[i].clear()
-                    self.timer2.restart()
 
     def set_fixed_fon(self):
         global first_start
@@ -736,7 +690,7 @@ class Ui_MainWindow(object):
 
                 widget = pg.GraphicsLayoutWidget()
                 widget.setFixedHeight(150)
-                plot = param_plot.ParameterPlot(stack_size=int(params_interval / plots_interval))
+                plot = param_plot.ParameterPlot(period=params_interval)
                 parameter.append(plot)
                 widget.addItem(plot)
                 widget.setBackground("w")
@@ -745,7 +699,7 @@ class Ui_MainWindow(object):
         else:
             for i in range(len(conc)):
                 self.param_values[i].setText("{:.2f}".format(conc[i]))
-                parameter[i].update(conc[i])
+                parameter[i].update(conc[i], params_interval)
                 parameter[i].show()
 
     def open_settings(self):
@@ -761,7 +715,6 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         self.thread = None
         self.timer1 = QtCore.QElapsedTimer()
-        self.timer2 = QtCore.QElapsedTimer()
         MainWindow.setObjectName("MainWindow")
         font = QtGui.QFont()
         font.setPointSize(26)
@@ -925,10 +878,11 @@ class Ui_MainWindow(object):
 
         self.main_layout.addLayout(self.settings)
         self.main_layout.addLayout(self.graphs)
+        ModalPopup(self).load()
+
         self.param_plots([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], True)
         MainWindow.setCentralWidget(self.centralwidget)
 
-        ModalPopup(self).load()
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)

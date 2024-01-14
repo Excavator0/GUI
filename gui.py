@@ -520,6 +520,8 @@ class Ui_MainWindow(object):
         self.start_button.setText("Старт")
         self.start_button.clicked.connect(self.run_thread)
         self.fon_update.setEnabled(True)
+        self.plot1.clear()
+        self.plot2.clear()
 
     def generate_warnings(self, warning):
         self.warnings_box.clear()
@@ -690,7 +692,8 @@ class Ui_MainWindow(object):
 
                 widget = pg.GraphicsLayoutWidget()
                 widget.setFixedHeight(150)
-                plot = param_plot.ParameterPlot(period=params_interval)
+                plot = param_plot.ParameterPlot()
+                plot.disableAutoRange(pg.ViewBox.XAxis)
                 parameter.append(plot)
                 widget.addItem(plot)
                 widget.setBackground("w")

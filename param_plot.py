@@ -83,7 +83,6 @@ class ParameterPlot(pg.PlotItem):
 
     def update(self, conc, period):
         self.clear()
-
         self.y.append(conc)
         self.x.append(now_timestamp())
         if self.x[-1] >= self.last:

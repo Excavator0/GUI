@@ -34,6 +34,7 @@ plots_interval = 10
 params_interval = "1 ч"
 stop_threads = True
 parameter = []
+parameter_names = [""] * 16
 days_threshold = 0
 modbus_connected = False
 device_num = 0
@@ -87,7 +88,6 @@ def read_fon_spe():
     for i in range(len(arr)):
         x_values.append(x_first + (i * ((x_last - x_first) / len(arr))))
     return x_values, arr, second_arr
-
 
 
 def start_func():
@@ -236,6 +236,8 @@ class ModalPopup(QDialog):
         plots_interval = int(json_data["plots_period"][0:2])
         self.combo2.setCurrentText(json_data["params_period"])
         params_interval = json_data["params_period"]
+        for i in range(16):
+            parameter_names[i] = json_data["param_names"][str(i + 1)]
         days_threshold = int(json_data["days_threshold"])
         self.save_entry.setText(str(days_threshold))
         self.min_entry.setText(json_data["limits"]["min"])
@@ -246,6 +248,10 @@ class ModalPopup(QDialog):
     def modbus_settings(self):
         self.modbus_popup = ModbusWindow(self)
         self.modbus_popup.show()
+
+    def rename_params(self):
+        self.rename_popup = RenameParamsWindow(self, self.parent)
+        self.rename_popup.show()
 
     def __init__(self, parent):
         super().__init__()
@@ -332,12 +338,19 @@ class ModalPopup(QDialog):
         self.save_entry = QtWidgets.QLineEdit()
         self.save_entry.setValidator(QtGui.QIntValidator())
         layout.addWidget(self.save_entry)
-        self.load()
 
         modbus_button = QtWidgets.QPushButton()
         modbus_button.setText("Настройки ModBus")
         modbus_button.clicked.connect(self.modbus_settings)
         layout.addWidget(modbus_button)
+
+        rename_button = QtWidgets.QPushButton()
+        rename_button.setText("Переименовать параметры")
+        rename_button.clicked.connect(self.rename_params)
+        layout.addWidget(rename_button)
+
+        self.load()
+
         spacer = QtWidgets.QSpacerItem(20, 200, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         layout.addItem(spacer)
         save_button = QtWidgets.QPushButton()
@@ -349,6 +362,52 @@ class ModalPopup(QDialog):
             button1.setEnabled(False)
             self.rb_on.setEnabled(False)
             self.rb_off.setEnabled(False)
+
+
+class RenameParamsWindow(QDialog):
+    def save_params(self):
+        for i in range(16):
+            parameter_names[i] = self.entries[i].text()[:50]
+        with open('./config.json', 'r', encoding="utf-8") as file:
+            json_data = json.load(file)
+        for i in range(16):
+            json_data["param_names"][str(i + 1)] = parameter_names[i]
+        with open('./config.json', 'w') as f:
+            json.dump(json_data, f)
+        self.big_parent.update_param_names()
+        self.close()
+
+    def __init__(self, parent, big_parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.big_parent = big_parent
+        self.setFixedSize(600, 600)
+        self.setWindowTitle("Изменение названий параметров")
+        self.setModal(True)
+        self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
+        layout = QGridLayout(self)
+        self.entries = []
+        for i in range(8):
+            label = QtWidgets.QLabel()
+            label.setText(f"Параметр {i + 1}")
+            layout.addWidget(label, i * 2, 0)
+            self.entries.append(QtWidgets.QLineEdit())
+            layout.addWidget(self.entries[i], 1 + i * 2, 0)
+            self.entries[i].setText(parameter_names[i])
+        for i in range(8):
+            label = QtWidgets.QLabel()
+            label.setText(f"Параметр {i + 9}")
+            layout.addWidget(label, i * 2, 1)
+            self.entries.append(QtWidgets.QLineEdit())
+            layout.addWidget(self.entries[i + 8], 1 + i * 2, 1)
+            self.entries[i + 8].setText(parameter_names[i + 8])
+        save_button = QtWidgets.QPushButton()
+        save_button.setText("Сохранить")
+        save_button.clicked.connect(self.save_params)
+
+        spacer = QtWidgets.QSpacerItem(20, 50, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        layout.addItem(spacer)
+        layout.addWidget(save_button, 17, 0, 1, 2)
 
 
 class ModbusWindow(QDialog):
@@ -667,15 +726,20 @@ class Ui_MainWindow(object):
                     send_res(device_num, res, warn)
         self.start_button.setEnabled(True)
 
+    def update_param_names(self):
+        for i in range(16):
+            self.params_labels[i].setText(parameter_names[i])
+
     def param_plots(self, conc, build):
         global parameter
         conc = [number for number in conc if int_max > number > -int_max]
         if build:
             layout = QGridLayout(self.scrollAreaWidgetContents)
+            self.params_labels = [None] * 16
             for i in range(len(conc)):
-                param_label = QtWidgets.QLabel()
-                param_label.setAlignment(QtCore.Qt.AlignCenter)
-                param_label.setText(f"Параметр {i + 1}")
+                self.params_labels[i] = QtWidgets.QLabel()
+                self.params_labels[i].setAlignment(QtCore.Qt.AlignCenter)
+                self.params_labels[i].setText(parameter_names[i])
                 param_value = QtWidgets.QLabel()
                 self.param_values.append(param_value)
                 font = QtGui.QFont()
@@ -687,7 +751,7 @@ class Ui_MainWindow(object):
                 param_value.setText("{:.2f}".format(conc[i]))
 
                 param_layout = QGridLayout()
-                param_layout.addWidget(param_label, 0, 0)
+                param_layout.addWidget(self.params_labels[i], 0, 0)
                 param_layout.addWidget(param_value, 1, 0)
 
                 widget = pg.GraphicsLayoutWidget()
@@ -725,16 +789,18 @@ class Ui_MainWindow(object):
         font.setWeight(50)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.main_layout = QVBoxLayout(self.centralwidget)
+        self.upper_left = QHBoxLayout()
+        self.upper_right = QHBoxLayout()
         self.settings = QHBoxLayout()
         self.settings.setObjectName("settings")
 
         button_font = QtGui.QFont()
-        button_font.setPointSize(9)
+        button_font.setPointSize(7)
         button_font.setBold(False)
 
         start_layout = QGridLayout()
         self.start_button = QtWidgets.QPushButton()
-        self.start_button.setFixedSize(160, 100)
+        self.start_button.setFixedSize(130, 100)
         self.start_button.setFont(button_font)
         self.start_button.setObjectName("start_button")
         self.start_button.clicked.connect(self.run_thread)
@@ -743,24 +809,22 @@ class Ui_MainWindow(object):
         start_layout.addWidget(self.start_button, 0, 0)
 
         group_box = QtWidgets.QGroupBox("Окно предупреждений")
-        group_box.setFixedWidth(400)
         group_box.setFixedHeight(120)
         self.warnings_box = QtWidgets.QListWidget()
-        self.warnings_box.setFixedWidth(380)
         self.warnings_box.setFixedHeight(80)
         group_layout = QVBoxLayout(group_box)
         group_layout.addWidget(self.warnings_box)
         start_layout.addWidget(group_box, 0, 2)
 
         start_fspec = QtWidgets.QPushButton()
-        start_fspec.setFixedSize(160, 100)
+        start_fspec.setFixedSize(130, 100)
         start_fspec.setText("Запуск FFSpec")
         start_fspec.setFont(button_font)
         start_fspec.clicked.connect(self.start_fspec)
         start_layout.addWidget(start_fspec, 0, 1)
 
         error_font = QtGui.QFont()
-        error_font.setPointSize(10)
+        error_font.setPointSize(6)
         error_font.setBold(True)
         self.label_layout = QHBoxLayout()
         self.icon_label = QtWidgets.QLabel()
@@ -777,7 +841,7 @@ class Ui_MainWindow(object):
         self.label_layout.addWidget(self.fspec_error)
 
         self.fon_update = QtWidgets.QPushButton()
-        self.fon_update.setFixedSize(160, 100)
+        self.fon_update.setFixedSize(130, 100)
         self.fon_update.setText("Взять спектр\nпустой кюветы")
         self.fon_update.setFont(button_font)
         self.fon_update.clicked.connect(self.run_fix_fon_thread)
@@ -789,7 +853,7 @@ class Ui_MainWindow(object):
         self.last_updated.setText("Дата обновления:\n" + json_data["fon_updated"])
         start_layout.addWidget(self.last_updated, 1, 3)
         start_layout.addLayout(self.label_layout, 1, 0, 1, 3)
-
+        self.upper_left.addLayout(start_layout)
         self.res_layout = QVBoxLayout()
 
         self.res_label = QtWidgets.QLabel()
@@ -836,13 +900,17 @@ class Ui_MainWindow(object):
         self.cuv_layout.addWidget(self.label_5)
 
         self.settings_button = QtWidgets.QPushButton()
-        self.settings_button.setFixedSize(160, 100)
+        self.settings_button.setFixedSize(130, 100)
         self.settings_button.setFont(button_font)
         self.settings_button.clicked.connect(self.open_settings)
         set_layout = QVBoxLayout()
         set_layout.addWidget(self.settings_button)
         spacer = QtWidgets.QSpacerItem(0, 40, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         set_layout.addItem(spacer)
+        self.upper_right.addLayout(self.res_layout)
+        self.upper_right.addLayout(self.scans_layout)
+        self.upper_right.addLayout(self.cuv_layout)
+        self.upper_right.addLayout(set_layout)
         self.graphs = QHBoxLayout()
 
         self.params_layout = QHBoxLayout()
@@ -873,11 +941,8 @@ class Ui_MainWindow(object):
         self.graphs.addLayout(self.params_layout)
         self.graphs.addLayout(self.plots_layout)
 
-        self.settings.addLayout(start_layout)
-        self.settings.addLayout(self.res_layout)
-        self.settings.addLayout(self.scans_layout)
-        self.settings.addLayout(self.cuv_layout)
-        self.settings.addLayout(set_layout)
+        self.settings.addLayout(self.upper_left)
+        self.settings.addLayout(self.upper_right)
 
         self.main_layout.addLayout(self.settings)
         self.main_layout.addLayout(self.graphs)
@@ -885,7 +950,6 @@ class Ui_MainWindow(object):
 
         self.param_plots([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], True)
         MainWindow.setCentralWidget(self.centralwidget)
-
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)

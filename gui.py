@@ -756,8 +756,9 @@ class Ui_MainWindow(object):
 
                 widget = pg.GraphicsLayoutWidget()
                 widget.setFixedHeight(150)
-                plot = param_plot.ParameterPlot()
-                plot.disableAutoRange(pg.ViewBox.XAxis)
+                # plot = param_plot.ParameterPlot()
+                # plot.disableAutoRange(pg.ViewBox.XAxis)
+                plot = param_plot.ParameterPlot(period=params_interval)
                 parameter.append(plot)
                 widget.addItem(plot)
                 widget.setBackground("w")

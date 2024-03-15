@@ -16,11 +16,18 @@ def now_timestamp(ts_mult=TS_MULT_us, epoch=UNIX_EPOCH):
 
 
 def min_h_timestamp(ts_mult=TS_MULT_us, epoch=UNIX_EPOCH):
-    return int((datetime.now().replace(second=0, microsecond=0, minute=0) - epoch).total_seconds() * ts_mult)
+    if datetime.now().minute < 30:
+        return int((datetime.now().replace(second=0, microsecond=0, minute=0) - epoch).total_seconds() * ts_mult)
+    else:
+        return int((datetime.now().replace(second=0, microsecond=0, minute=30) - epoch).total_seconds() * ts_mult)
 
 
 def max_h_timestamp(ts_mult=TS_MULT_us, epoch=UNIX_EPOCH):
-    return int((datetime.now().replace(second=59, microsecond=0, minute=59) - epoch).total_seconds() * ts_mult)
+    if datetime.now().minute < 30:
+        return int((datetime.now().replace(second=59, microsecond=0, minute=59) - epoch).total_seconds() * ts_mult)
+    else:
+        return int((datetime.now().replace(second=0, microsecond=0, minute=30, hour=(datetime.now().hour + 1))
+                    - epoch).total_seconds() * ts_mult)
 
 
 def min_12h_timestamp(ts_mult=TS_MULT_us, epoch=UNIX_EPOCH):
@@ -56,7 +63,6 @@ def int2dt(ts, ts_mult=TS_MULT_us):
 class TimeAxisItem(pg.AxisItem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setScale(1.2)
 
     def tickStrings(self, values, scale, spacing):
         return [int2dt(value).strftime("%H:%M") for value in values]
@@ -69,17 +75,21 @@ class ParameterPlot(pg.PlotItem):
         self.plot()
         self.y = []
         self.x = []
+        self.spacing = 0
         self.changed = False
         self.period = period
         if period == "1 ч":
             self.first = min_h_timestamp()
             self.last = max_h_timestamp()
+            self.spacing = 900 * TS_MULT_us
         elif period == "12 ч":
             self.first = min_12h_timestamp()
             self.last = max_12h_timestamp()
+            self.spacing = 10800 * TS_MULT_us
         else:
             self.first = min_24h_timestamp()
             self.last = max_24h_timestamp()
+            self.spacing = 21600 * TS_MULT_us
 
     def update(self, conc, period):
         self.clear()
@@ -89,12 +99,15 @@ class ParameterPlot(pg.PlotItem):
             if period == "1 ч":
                 self.first = min_h_timestamp()
                 self.last = max_h_timestamp()
+                self.spacing = 900 * TS_MULT_us
             elif period == "12 ч":
                 self.first = min_12h_timestamp()
                 self.last = max_12h_timestamp()
+                self.spacing = 10800 * TS_MULT_us
             else:
                 self.first = min_24h_timestamp()
                 self.last = max_24h_timestamp()
+                self.spacing = 21600 * TS_MULT_us
             self.changed = False
             self.x = self.x[:-1]
             self.y = self.y[:-1]
@@ -104,5 +117,6 @@ class ParameterPlot(pg.PlotItem):
             self.setAxisItems(axisItems={'bottom': date_axis})
             self.setXRange(self.first, self.last)
             self.changed = True
-
+            date_axis.setStyle(autoExpandTextSpace=True)
+            date_axis.setTickSpacing(levels=[(self.spacing, 0)])
         self.addItem(param_data)

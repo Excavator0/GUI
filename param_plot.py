@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pyqtgraph as pg
 
@@ -26,7 +26,7 @@ def max_h_timestamp(ts_mult=TS_MULT_us, epoch=UNIX_EPOCH):
     if datetime.now().minute < 30:
         return int((datetime.now().replace(second=59, microsecond=0, minute=59) - epoch).total_seconds() * ts_mult)
     else:
-        return int((datetime.now().replace(second=0, microsecond=0, minute=30, hour=(datetime.now().hour + 1))
+        return int((datetime.now().replace(second=0, microsecond=0, minute=30) + timedelta(hours=1)
                     - epoch).total_seconds() * ts_mult)
 
 

@@ -1,6 +1,8 @@
 import configparser
 import csv
 import glob
+from pathlib import Path
+
 import serial.tools.list_ports
 import os
 import subprocess
@@ -28,6 +30,7 @@ import param_plot
 first_start = True
 int_max = 100000
 simulation = 1
+theme = ""
 method_path = "test-2.mtg"
 fspec_path = "Не выбран"
 plots_interval = 10
@@ -170,7 +173,7 @@ class ModalPopup(QDialog):
         self.path2_label.setText(fspec_path)
 
     def save(self):
-        global simulation, plots_interval, params_interval, days_threshold
+        global simulation, plots_interval, params_interval, days_threshold, theme
         self.close()
 
         if self.rb_off.isChecked():
@@ -215,11 +218,12 @@ class ModalPopup(QDialog):
         json_data["days_threshold"] = days_threshold
         json_data["limits"]["min"] = min_val
         json_data["limits"]["max"] = max_val
+        json_data["theme"] = theme
         with open('./config.json', 'w') as f:
             json.dump(json_data, f)
 
     def load(self):
-        global method_path, fspec_path, params_interval, plots_interval, simulation, days_threshold
+        global method_path, fspec_path, params_interval, plots_interval, simulation, days_threshold, theme
         with open('./config.json', 'r', encoding="utf-8") as file:
             json_data = json.load(file)
         if json_data["simulation"] == "1":
@@ -244,6 +248,8 @@ class ModalPopup(QDialog):
         self.max_entry.setText(json_data["limits"]["max"])
         self.parent.plot2.setXRange(int(json_data["limits"]["min"]), int(json_data["limits"]["max"]))
         self.parent.plot1.setXRange(int(json_data["limits"]["min"]), int(json_data["limits"]["max"]))
+        theme = json_data["theme"]
+        QtWidgets.QApplication.instance().setStyleSheet(Path(f'./themes/{theme}.qss').read_text())
 
     def modbus_settings(self):
         self.modbus_popup = ModbusWindow(self)
@@ -253,13 +259,24 @@ class ModalPopup(QDialog):
         self.rename_popup = RenameParamsWindow(self, self.parent)
         self.rename_popup.show()
 
+    def change_theme(self):
+        global theme
+        app = QtWidgets.QApplication.instance()
+        if theme == "light":
+            app.setStyleSheet(Path('./themes/brand.qss').read_text())
+            theme = "brand"
+        else:
+            app.setStyleSheet(Path('./themes/light.qss').read_text())
+            theme = "light"
+
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
-        self.setFixedSize(400, 600)
+        self.setFixedSize(400, 700)
         self.setWindowTitle("Настройки")
         self.setModal(True)
         self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
+        self.setWindowIcon(QtGui.QIcon('logo.jpg'))
         layout = QVBoxLayout(self)
         label1 = QtWidgets.QLabel()
         label1.setText("Симуляция")
@@ -351,12 +368,26 @@ class ModalPopup(QDialog):
 
         self.load()
 
+        change_theme = QtWidgets.QPushButton()
+        change_theme.setText("Сменить тему")
+        change_theme.clicked.connect(self.change_theme)
+        layout.addWidget(change_theme)
+
         spacer = QtWidgets.QSpacerItem(20, 200, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         layout.addItem(spacer)
         save_button = QtWidgets.QPushButton()
         save_button.setText("Сохранить")
         save_button.clicked.connect(self.save)
         layout.addWidget(save_button)
+
+        logo_layout = QtWidgets.QHBoxLayout()
+        logo = QtWidgets.QLabel()
+        pixmap = QtGui.QPixmap('logo.jpg')
+        logo.setPixmap(pixmap)
+        spacer = QtWidgets.QSpacerItem(158, 0, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        logo_layout.addItem(spacer)
+        logo_layout.addWidget(logo)
+        layout.addLayout(logo_layout)
 
         if not stop_threads:
             button1.setEnabled(False)
@@ -385,6 +416,7 @@ class RenameParamsWindow(QDialog):
         self.setWindowTitle("Изменение названий параметров")
         self.setModal(True)
         self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
+        self.setWindowIcon(QtGui.QIcon('logo.jpg'))
         layout = QGridLayout(self)
         self.entries = []
         for i in range(8):
@@ -458,6 +490,7 @@ class ModbusWindow(QDialog):
         self.setWindowTitle("Настройки ModBus")
         self.setModal(True)
         self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
+        self.setWindowIcon(QtGui.QIcon('logo.jpg'))
         layout = QVBoxLayout(self)
         available_ports = [i.device for i in serial.tools.list_ports.comports()]
         label1 = QtWidgets.QLabel()
@@ -517,6 +550,9 @@ class ModbusWindow(QDialog):
 
 
 class Ui_MainWindow(object):
+    def change_color(self):
+        self.parent.setStyleSheet('background-color: red;')
+
     def save_to_archive(self, conc, y):
         global days_threshold
         date_now = datetime.today().strftime('%y_%m_%d')
@@ -785,6 +821,7 @@ class Ui_MainWindow(object):
         self.thread = None
         self.timer1 = QtCore.QElapsedTimer()
         MainWindow.setObjectName("MainWindow")
+        self.parent = MainWindow
         font = QtGui.QFont()
         font.setPointSize(16)
         font.setBold(False)
@@ -818,12 +855,11 @@ class Ui_MainWindow(object):
         group_layout.addWidget(self.warnings_box)
         start_layout.addWidget(group_box, 0, 2)
 
-        start_fspec = QtWidgets.QPushButton()
-        start_fspec.setFixedSize(130, 100)
-        start_fspec.setText("Запуск FFSpec")
-        start_fspec.setFont(button_font)
-        start_fspec.clicked.connect(self.start_fspec)
-        start_layout.addWidget(start_fspec, 0, 1)
+        logo_label = QtWidgets.QLabel()
+        pixmap = QtGui.QPixmap("logo_big.jpg")
+        logo_label.setPixmap(pixmap)
+
+        start_layout.addWidget(logo_label, 0, 1)
 
         error_font = QtGui.QFont()
         error_font.setPointSize(6)

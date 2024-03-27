@@ -112,16 +112,30 @@ def init_func():
 
 
 def get_value_func():
-    getValue_function = my_dll.GetValue
-    getValue_function.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int),
+    getValue_function = my_dll.GetValueFile
+    getValue_function.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_double),
                                   ctypes.c_char_p]
     getValue_function.restypes = [ctypes.c_int]
-    warning = (ctypes.c_int * 1)()
     method = ctypes.c_char_p(method_path.encode('utf-8'))
+    list_of_files = glob.glob('./Spectra/*')[-4:][0]
+    spectre = ctypes.c_char_p(str(list_of_files).encode('utf-8'))
     conc = (ctypes.c_double * 16)()
     password = b""
-    result = getValue_function(method, conc, warning, password)
-    return result, warning[0], list(conc)
+    result = getValue_function(method, spectre, conc, password)
+    return result, list(conc)
+
+# старый метод
+# def get_value_func():
+#     getValue_function = my_dll.GetValue
+#     getValue_function.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int),
+#                                   ctypes.c_char_p]
+#     getValue_function.restypes = [ctypes.c_int]
+#     warning = (ctypes.c_int * 1)()
+#     method = ctypes.c_char_p(method_path.encode('utf-8'))
+#     conc = (ctypes.c_double * 16)()
+#     password = b""
+#     result = getValue_function(method, conc, warning, password)
+#     return result, warning[0], list(conc)
 
 
 def get_spectr_func():
@@ -146,7 +160,7 @@ def get_spectr_func():
 
     second_arr = np.fromfile("./Spectra/values_bin.txt", dtype=np.single)
     for i in range(len(arr)):
-        arr[i] = arr[i] - second_arr[i]
+        arr[i] = abs(arr[i] - second_arr[i])
     for i in range(len(arr)):
         x_values.append(x_first + (i * ((x_last - x_first) / len(arr))))
     return x_values, list(arr)
@@ -654,7 +668,7 @@ class Ui_MainWindow(object):
                     if res == 0:
                         x, y, y2 = read_fon_spe()
                         self.plot1.update(x, y, y2)
-                        res, warn, conc = get_value_func()
+                        res, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
                             self.param_plots(conc, False)
@@ -693,7 +707,7 @@ class Ui_MainWindow(object):
                     if res == 0:
                         x, y, y2 = read_fon_spe()
                         self.plot1.update(x, y, y2)
-                        res, warn, conc = get_value_func()
+                        res, conc = get_value_func()
                         if res == 0:
                             conc = [number for number in conc if number != 0]
                             self.param_plots(conc, False)

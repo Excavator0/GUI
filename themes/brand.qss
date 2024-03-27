@@ -17,6 +17,7 @@ QPushButton:focus {
 }
 QPushButton:disabled {
   background-color: gray;
+  border: 1px solid gray;
 }
 QLabel {
   color: white;
@@ -34,5 +35,8 @@ QComboBox QAbstractItemView {
   color: white;
 }
 QGroupBox {
+  color: white;
+}
+QListWidget {
   color: white;
 }
